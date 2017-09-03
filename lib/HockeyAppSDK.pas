@@ -3,8 +3,8 @@ unit HockeyAppSDK;
 interface
 
 uses
-  IdHTTP, System.Generics.Collections, System.JSON, IdMultipartFormData,
-  IdComponent;
+  System.Generics.Collections, System.JSON, System.Net.HttpClient,
+  System.Net.Mime, System.Net.URLClient;
 
 type
   THockeyNotesType = (Textile, Markdown);
@@ -45,9 +45,10 @@ type
     FId: Integer;
   public
     procedure FromJson(jsonObj: TJSONObject);
+    function ToString: String;override;
 
     property Id: Integer read FId;
-    property Verison: String read FVersion;
+    property Version: String read FVersion;
     property ShortVersion: String read FShortVersion;
     property ConfigURL: String read FConfigURL;
     property Notes: String read FNotes;
@@ -71,7 +72,7 @@ type
     Teams: String;
     Users: String;
 
-    procedure AssignToFormStream(stream: TIdMultiPartFormDataStream);
+    procedure AssignToFormStream(var stream: TMultipartFormData);
   end;
 
   THockeyUpdateVersionInfo = record
@@ -86,16 +87,15 @@ type
     Users: String;
     Mandatory: Integer;
 
-    procedure AssignToFormStream(stream: TIdMultiPartFormDataStream);
+    procedure AssignToFormStream(stream: TMultipartFormData);
   end;
 
   THockeyAppSDK = class(TObject)
   private
     FApiToken: String;
     FLastError: String;
-    FOnWork: TWorkEvent;
-    FOnWorkBegin: TWorkBeginEvent;
-    function getHTTPClient: TIdHTTP;
+    FOnReceiveData: TReceiveDataEvent;
+    function getHTTPClient: THTTPClient;
   public
     function ListApps: THockeyAppList;
     function ListVersions(AppId: String): THockeyVersionList;
@@ -105,14 +105,13 @@ type
 
     property LastError: String read FLastError;
     property ApiToken: String read FApiToken write FApiToken;
-    property OnWorkBegin: TWorkBeginEvent read FOnWorkBegin write FOnWorkBegin;
-    property OnWork: TWorkEvent read FOnWork write FOnWork;
+    property OnReceiveData: TReceiveDataEvent read FOnReceiveData write FOnReceiveData;
   end;
 
 implementation
 
 uses
-  System.SysUtils;
+  System.SysUtils, System.Classes;
 
 
 const C_ServiceURL = 'https://rink.hockeyapp.net/api/2/';
@@ -122,28 +121,31 @@ const C_ServiceURL = 'https://rink.hockeyapp.net/api/2/';
 function THockeyAppSDK.CreateVersion(AppId: String;
   createVersionInfo: THockeyCreateVersionInfo): THockeyAppVersion;
 var
-  http: TIdHTTP;
-  resp: string;
-  stream: TIdMultiPartFormDataStream;
+  http: THTTPClient;
+  stream: TMultipartFormData;
   jsonObj: TJSONObject;
+  resp: IHTTPResponse;
 begin
   http := getHTTPClient;
-  stream := TIdMultiPartFormDataStream.Create;
-  Result := THockeyAppVersion.Create;
+  stream := TMultipartFormData.Create;
+  Result := nil;
   try
     try
-      http.Request.CustomHeaders.AddValue('X-HockeyAppToken', FApiToken);
+      http.CustomHeaders['X-HockeyAppToken'] := FApiToken;
       createVersionInfo.AssignToFormStream(stream);
 
       resp := http.Post(C_ServiceURL+'apps/'+AppId+'/app_versions/new', stream);
-      jsonObj := TJSONObject.ParseJSONValue(resp) as TJSONObject;
-      Result.FromJson(jsonObj);
-      jsonObj.Free;
-    except
-      on E:EIdHTTPProtocolException do
+      if resp.StatusCode = 201 then
       begin
-        FLastError := E.Message;
+        Result := THockeyAppVersion.Create;
+        jsonObj := TJSONObject.ParseJSONValue(resp.ContentAsString) as TJSONObject;
+        Result.FromJson(jsonObj);
+        jsonObj.Free;
+      end else
+      begin
+        FLastError := resp.ContentAsString;
       end;
+    except
       on E:Exception do
       begin
         FLastError := E.Message;
@@ -155,29 +157,35 @@ begin
   end;
 end;
 
-function THockeyAppSDK.getHTTPClient: TIdHTTP;
+function THockeyAppSDK.getHTTPClient: THTTPClient;
 begin
-  Result := TIdHTTP.Create;
-  Result.OnWork := FOnWork;
-  Result.OnWorkBegin := FOnWorkBegin;
+  Result := THTTPClient.Create;
+  Result.OnReceiveData := FOnReceiveData;
 end;
 
 function THockeyAppSDK.ListApps: THockeyAppList;
 var
-  http: TIdHTTP;
-  resp: string;
   jsonObj: TJSONObject;
+  http: THTTPClient;
+  resp: IHTTPResponse;
 begin
-  Result := THockeyAppList.Create;
+  Result := nil;
   http := getHTTPClient;
   try
     try
-      http.Request.CustomHeaders.AddValue('X-HockeyAppToken', FApiToken);
+      http.CustomHeaders['X-HockeyAppToken']:= FApiToken;
       resp := http.Get(C_ServiceURL+'apps');
 
-      jsonObj := TJSONObject.ParseJSONValue(resp) as TJSONObject;
-      Result.FromJson(TJsonArray(jsonObj.Values['apps']));
-      jsonObj.Free;
+      if resp.StatusCode = 200 then
+      begin
+        Result := THockeyAppList.Create;
+        jsonObj := TJSONObject.ParseJSONValue(resp.ContentAsString) as TJSONObject;
+        Result.FromJson(TJsonArray(jsonObj.Values['apps']));
+        jsonObj.Free;
+      end else
+      begin
+        FLastError := resp.ContentAsString;
+      end;
     except
       on E:Exception do
       begin
@@ -191,24 +199,27 @@ end;
 
 function THockeyAppSDK.ListVersions(AppId: String): THockeyVersionList;
 var
-  http: TIdHTTP;
-  resp: string;
   jsonObj: TJSONObject;
+  http: THTTPClient;
+  resp: IHTTPResponse;
 begin
-  Result := THockeyVersionList.Create;
+  Result := nil;
   http := getHTTPClient;
   try
-    http.Request.CustomHeaders.AddValue('X-HockeyAppToken', FApiToken);
+    http.CustomHeaders['X-HockeyAppToken']:= FApiToken;
     try
       resp := http.Get(C_ServiceURL+'apps/'+AppId+'/app_versions');
-      jsonObj := TJSONObject.ParseJSONValue(resp) as TJSONObject;
-      Result.FromJson(TJsonArray(jsonObj.GetValue('app_versions')));
-      jsonObj.Free;
-    except
-      on E: EIdHTTPProtocolException do
+      if resp.StatusCode = 200 then
       begin
-        FLastError :=  E.ErrorMessage;
+        Result := THockeyVersionList.Create;
+        jsonObj := TJSONObject.ParseJSONValue(resp.ContentAsString) as TJSONObject;
+        Result.FromJson(TJsonArray(jsonObj.GetValue('app_versions')));
+        jsonObj.Free;
+      end else
+      begin
+        FLastError := resp.ContentAsString;
       end;
+    except
       on E:Exception do
       begin
         FLastError := E.Message;
@@ -222,30 +233,36 @@ end;
 function THockeyAppSDK.UpdateVersion(AppId: String; versionId: Integer;
   updateVersionInfo: THockeyUpdateVersionInfo): THockeyAppVersion;
 var
-  http: TIdHTTP;
-  resp: string;
-  stream: TIdMultiPartFormDataStream;
+  stream: TMultipartFormData;
   jsonObj: TJSONObject;
+  http: THTTPClient;
+  resp: IHTTPResponse;
+  tmpStream: TMemoryStream;
 begin
   http := getHTTPClient;
-  stream := TIdMultiPartFormDataStream.Create;
-  Result := THockeyAppVersion.Create;
+  stream := TMultipartFormData.Create;
+  Result := nil;
   try
     try
-      http.Request.CustomHeaders.AddValue('X-HockeyAppToken', FApiToken);
+      http.CustomHeaders['X-HockeyAppToken']:= FApiToken;
       updateVersionInfo.AssignToFormStream(stream);
 
-      http.Request.CustomHeaders.AddValue('Content-Type', stream.RequestContentType);
+      tmpStream := stream.Stream;
+      tmpStream.Position := 0;
+      http.ContentType := stream.MimeTypeHeader;
+      resp := http.Put(C_ServiceURL+'apps/'+AppId+'/app_versions/'+IntToStr(versionId), tmpStream);
 
-      resp := http.Put(C_ServiceURL+'apps/'+AppId+'/app_versions/'+IntToStr(versionId), stream);
-      jsonObj := TJSONObject.ParseJSONValue(resp) as TJSONObject;
-      Result.FromJson(jsonObj);
-      jsonObj.Free;
-    except
-      on E:EIdHTTPProtocolException do
+      if resp.StatusCode = 201 then
       begin
-        FLastError := E.ErrorMessage;
+        Result := THockeyAppVersion.Create;
+        jsonObj := TJSONObject.ParseJSONValue(resp.ContentAsString) as TJSONObject;
+        Result.FromJson(jsonObj);
+        jsonObj.Free;
+      end else
+      begin
+        FLastError := resp.ContentAsString;
       end;
+    except
       on E:Exception do
       begin
         FLastError := E.Message;
@@ -260,29 +277,31 @@ end;
 function THockeyAppSDK.UploadVersion(AppId: String;
   updateVersionInfo: THockeyUpdateVersionInfo): THockeyAppVersion;
 var
-  http: TIdHTTP;
-  stream: TIdMultiPartFormDataStream;
-  resp: string;
+  stream: TMultipartFormData;
   jsonObj: TJSONObject;
+  http: THTTPClient;
+  resp: IHTTPResponse;
 begin
-  Result := THockeyAppVersion.Create;
+  Result := nil;
   http := getHTTPClient;
-  stream := TIdMultiPartFormDataStream.Create;
+  stream := TMultipartFormData.Create;
   try
     updateVersionInfo.AssignToFormStream(stream);
-    http.Request.CustomHeaders.AddValue('X-HockeyAppToken', FApiToken);
-    http.Request.CustomHeaders.AddValue('Content-Type', stream.RequestContentType);
+    http.CustomHeaders['X-HockeyAppToken']:= FApiToken;
 
     try
       resp := http.Post(C_ServiceURL+'apps/'+AppId+'/app_versions/upload', stream);
-      jsonObj := TJSONObject.ParseJSONValue(resp) as TJSONObject;
-      Result.FromJson(jsonObj);
-      jsonObj.Free;
-    except
-      on E:EIdHTTPProtocolException do
+      if resp.StatusCode = 201 then
       begin
-        FLastError := E.ErrorMessage;
+        Result := THockeyAppVersion.Create;
+        jsonObj := TJSONObject.ParseJSONValue(resp.ContentAsString) as TJSONObject;
+        Result.FromJson(jsonObj);
+        jsonObj.Free;
+      end else
+      begin
+        FLastError := resp.ContentAsString;
       end;
+    except
       on E:Exception do
       begin
         FLastError := E.Message;
@@ -344,16 +363,16 @@ end;
 { THockeyCreateVersionInfo }
 
 procedure THockeyCreateVersionInfo.AssignToFormStream(
-  stream: TIdMultiPartFormDataStream);
+  var stream: TMultipartFormData);
 begin
-  stream.AddFormField('bundle_version', Self.BundleVersion);
-  stream.AddFormField('bundle_short_version', Self.BundleShortVersion);
-  stream.AddFormField('notes', Self.Notes);
-  stream.AddFormField('notes_type', IntToStr(Integer(NotesType)));
-  stream.AddFormField('status', IntToStr(Integer(Self.Status)));
-  stream.AddFormField('tags', Self.Tags);
-  stream.AddFormField('teams', Self.Teams);
-  stream.AddFormField('users', Self.Users);
+  stream.AddField('bundle_version', Self.BundleVersion);
+//  stream.AddField('bundle_short_version', Self.BundleShortVersion);
+  stream.AddField('notes', Self.Notes);
+  stream.AddField('notes_type', IntToStr(Integer(NotesType)));
+  stream.AddField('status', IntToStr(Integer(Self.Status)));
+  stream.AddField('tags', Self.Tags);
+  stream.AddField('teams', Self.Teams);
+  stream.AddField('users', Self.Users);
 end;
 
 { THockeyAppVersion }
@@ -367,6 +386,11 @@ begin
   jsonObj.TryGetValue<String>('download_url', FDownloadURL);
   jsonObj.TryGetValue<String>('notes', FNotes);
   jsonObj.TryGetValue<Int64>('appsize', FAppSize);
+end;
+
+function THockeyAppVersion.ToString: String;
+begin
+  Result := Format('%s - %s', [Version, Notes]);
 end;
 
 { THockeyVersionList }
@@ -403,18 +427,18 @@ end;
 { THockeyUpdateVersionInfo }
 
 procedure THockeyUpdateVersionInfo.AssignToFormStream(
-  stream: TIdMultiPartFormDataStream);
+  stream: TMultipartFormData);
 begin
   if ipa <> '' then stream.AddFile('ipa', Ipa);
   if Dsym <> '' then stream.AddFile('dsym', Dsym);
-  stream.AddFormField('notes', notes);
-  stream.AddFormField('notes_type', IntToStr(Integer(NotesType)));
-  stream.AddFormField('notify', IntToStr(Notify));
-  stream.AddFormField('status', IntToStr(Integer(Status)));
-  stream.AddFormField('tags', Tags);
-  stream.AddFormField('teams', Teams);
-  stream.AddFormField('users', Users);
-  stream.AddFormField('mandatory', IntToStr(Mandatory));
+  stream.AddField('notes', notes);
+  stream.AddField('notes_type', IntToStr(Integer(NotesType)));
+  stream.AddField('notify', IntToStr(Notify));
+  stream.AddField('status', IntToStr(Integer(Status)));
+  stream.AddField('tags', Tags);
+  stream.AddField('teams', Teams);
+  stream.AddField('users', Users);
+  stream.AddField('mandatory', IntToStr(Mandatory));
 end;
 
 end.
