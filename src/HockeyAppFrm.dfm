@@ -22,7 +22,6 @@ object HockeyAppDlg: THockeyAppDlg
     Height = 451
     Align = alLeft
     TabOrder = 0
-    ExplicitHeight = 266
     object Button1: TButton
       AlignWithMargins = True
       Left = 1
@@ -37,8 +36,6 @@ object HockeyAppDlg: THockeyAppDlg
       Caption = 'List Apps'
       TabOrder = 0
       OnClick = Button1Click
-      ExplicitLeft = -1
-      ExplicitTop = 27
     end
     object Button2: TButton
       Left = 1
@@ -49,9 +46,6 @@ object HockeyAppDlg: THockeyAppDlg
       Caption = 'Add Version'
       TabOrder = 1
       OnClick = Button2Click
-      ExplicitLeft = 8
-      ExplicitTop = 39
-      ExplicitWidth = 75
     end
     object Button3: TButton
       Left = 1
@@ -62,9 +56,6 @@ object HockeyAppDlg: THockeyAppDlg
       Caption = 'Update Version'
       TabOrder = 2
       OnClick = Button3Click
-      ExplicitLeft = 8
-      ExplicitTop = 70
-      ExplicitWidth = 75
     end
     object Button4: TButton
       Left = 1
@@ -75,8 +66,6 @@ object HockeyAppDlg: THockeyAppDlg
       Caption = 'List Versions'
       TabOrder = 3
       OnClick = Button4Click
-      ExplicitLeft = 2
-      ExplicitTop = 20
     end
     object Button5: TButton
       Left = 1
@@ -87,9 +76,6 @@ object HockeyAppDlg: THockeyAppDlg
       Caption = 'Upload Version'
       TabOrder = 4
       OnClick = Button5Click
-      ExplicitLeft = 8
-      ExplicitTop = 132
-      ExplicitWidth = 75
     end
     object EdApiToken: TEdit
       Left = 1
@@ -100,8 +86,6 @@ object HockeyAppDlg: THockeyAppDlg
       TabOrder = 5
       TextHint = 'API-Token'
       OnChange = EdApiTokenChange
-      ExplicitLeft = 9
-      ExplicitTop = -1
     end
     object cbApps: TComboBox
       Left = 1
@@ -120,7 +104,6 @@ object HockeyAppDlg: THockeyAppDlg
     Height = 451
     Align = alClient
     TabOrder = 1
-    ExplicitLeft = 126
     object GroupBox1: TGroupBox
       Left = 1
       Top = 263
@@ -129,9 +112,6 @@ object HockeyAppDlg: THockeyAppDlg
       Align = alBottom
       Caption = 'Response'
       TabOrder = 0
-      ExplicitLeft = 0
-      ExplicitTop = 264
-      ExplicitWidth = 679
       object MResponse: TMemo
         Left = 2
         Top = 15
@@ -150,10 +130,6 @@ object HockeyAppDlg: THockeyAppDlg
       Align = alClient
       Caption = 'Release Notes'
       TabOrder = 1
-      ExplicitLeft = 240
-      ExplicitTop = 232
-      ExplicitWidth = 185
-      ExplicitHeight = 105
       object rgNotesType: TRadioGroup
         Left = 2
         Top = 15
@@ -175,10 +151,6 @@ object HockeyAppDlg: THockeyAppDlg
         Height = 203
         Align = alClient
         TabOrder = 1
-        ExplicitLeft = 56
-        ExplicitTop = 80
-        ExplicitWidth = 185
-        ExplicitHeight = 89
       end
     end
   end

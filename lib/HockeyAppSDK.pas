@@ -1,10 +1,13 @@
+// Stacktrace for iOS and Android is from here
+// https://blog.grijjy.com/2017/02/09/build-your-own-error-reporter-part-1-ios/
+
 unit HockeyAppSDK;
 
 interface
 
 uses
   System.Generics.Collections, System.JSON, System.Net.HttpClient,
-  System.Net.Mime, System.Net.URLClient;
+  System.Net.Mime, System.Net.URLClient, System.Messaging;
 
 type
   THockeyNotesType = (Textile, Markdown);
@@ -90,6 +93,22 @@ type
     procedure AssignToFormStream(stream: TMultipartFormData);
   end;
 
+  THockeyAppCrash = class(TObject)
+  private
+    FLogFile: String;
+    FDescription: String;
+    FUserId: String;
+    FContact: String;
+  public
+    procedure AssignToFormStream(stream: TMultipartFormData);
+
+
+    property LogFile: String read FLogFile write FLogFile;
+    property Description: String read FDescription write FDescription;
+    property UserID: String read FUserId write FUserId;
+    property Contact: String read FContact write FContact;
+  end;
+
   THockeyAppSDK = class(TObject)
   private
     FApiToken: String;
@@ -103,15 +122,37 @@ type
     function UpdateVersion(AppId: String; versionId: Integer; updateVersionInfo: THockeyUpdateVersionInfo): THockeyAppVersion;
     function UploadVersion(AppId: String; updateVersionInfo: THockeyUpdateVersionInfo): THockeyAppVersion;
 
+    function UploadCrash(AppId: String; crash: THockeyAppCrash): Boolean;
+
     property LastError: String read FLastError;
     property ApiToken: String read FApiToken write FApiToken;
     property OnReceiveData: TReceiveDataEvent read FOnReceiveData write FOnReceiveData;
   end;
 
+  THockeyAppExceptionHandler = class(TObject)
+  private
+    FApiToken: String;
+    FAppId: String;
+    FPackageId: String;
+    FVersion: String;
+
+    FCrashLogs: TObjectList<THockeyAppCrash>;
+    procedure LoadCrashLogs;
+    procedure SendAsyncToHockey;
+
+    procedure HandleExceptionMessage(const Sender: TObject; const M: TMessage);
+  public
+    constructor Create(ApiToken: String; AppId: String; PackageId: String; Version: String);
+    destructor Destroy;override;
+
+
+  end;
+
 implementation
 
 uses
-  System.SysUtils, System.Classes;
+  Forms, System.SysUtils, System.Classes, System.IOUtils,
+  System.Types, Grijjy.ErrorReporting;
 
 
 const C_ServiceURL = 'https://rink.hockeyapp.net/api/2/';
@@ -271,6 +312,27 @@ begin
   finally
     stream.Free;
     http.Free;
+  end;
+end;
+
+function THockeyAppSDK.UploadCrash(AppId: String; crash: THockeyAppCrash): Boolean;
+var
+  http: THTTPClient;
+  resp: IHTTPResponse;
+  stream: TMultipartFormData;
+begin
+  http := getHTTPClient;
+  stream := TMultipartFormData.Create;
+  try
+    http.CustomHeaders['X-HockeyAppToken']:= FApiToken;
+
+    crash.AssignToFormStream(stream);
+    http.ContentType := 'multipart/form-data';//stream.MimeTypeHeader;
+    resp := http.Post(C_ServiceURL+'apps/'+AppId+'/crashes/upload', stream);
+    Result := resp.StatusCode = 201;
+  finally
+    http.DisposeOf;
+    stream.Free;
   end;
 end;
 
@@ -439,6 +501,97 @@ begin
   stream.AddField('teams', Teams);
   stream.AddField('users', Users);
   stream.AddField('mandatory', IntToStr(Mandatory));
+end;
+
+{ THockeyAppCrash }
+
+procedure THockeyAppCrash.AssignToFormStream(stream: TMultipartFormData);
+begin
+  if LogFile <> '' then stream.AddFile('log', LogFile);
+//  stream.AddField('description', description);
+  if not UserID.IsEmpty then stream.AddField('userID', UserID);
+  if not Contact.IsEmpty then stream.AddField('contact ', Contact);
+end;
+
+{ THockeyAppExceptionHandler }
+
+constructor THockeyAppExceptionHandler.Create(ApiToken: String; AppId, PackageId: String; Version: String);
+begin
+  Application.OnException := TgoExceptionReporter.ExceptionHandler;
+  TMessageManager.DefaultManager.SubscribeToMessage(TgoExceptionReportMessage, HandleExceptionMessage);
+
+  FApiToken := ApiToken;
+  FAppId := AppId;
+  FPackageId := PackageId;
+  FVersion := Version;
+  FCrashLogs := TObjectList<THockeyAppCrash>.Create;
+  LoadCrashLogs;
+
+  if FCrashLogs.Count > 0 then
+  begin
+    SendAsyncToHockey;
+  end;
+end;
+
+destructor THockeyAppExceptionHandler.Destroy;
+begin
+  FCrashLogs.DisposeOf;
+  inherited;
+end;
+
+procedure THockeyAppExceptionHandler.HandleExceptionMessage(
+  const Sender: TObject; const M: TMessage);
+var
+  filename: string;
+  hockeyText: string;
+begin
+  if M is TgoExceptionReportMessage then
+  begin
+    filename := TPath.Combine(TPath.GetDocumentsPath, Format('Exception%s.log', [FormatDateTime('yyyymmddhhnnss', Now)]));
+    hockeyText := 'Package: '+ FPackageId +#13#10+
+                  'Version: ' + FVersion +#13#10+
+                  'Date: '+DateTimeToStr(Now)+#13#10+
+                  #13#10;
+    TFile.WriteAllText(filename, hockeyText + TgoExceptionReportMessage(M).Report.Report);
+  end;
+end;
+
+procedure THockeyAppExceptionHandler.LoadCrashLogs;
+var
+  files: TStringDynArray;
+  logFile: String;
+  crash: THockeyAppCrash;
+  filepath: string;
+  guid: string;
+begin
+  filepath := TPath.GetDocumentsPath;
+  files := TDirectory.GetFiles(filepath, '*.log');
+  guid := TGUID.NewGuid.ToString;
+  for logFile in files do
+  begin
+    crash := THockeyAppCrash.Create;
+    crash.LogFile := logFile;
+    crash.UserID := guid;
+    FCrashLogs.Add(crash);
+  end;
+end;
+
+procedure THockeyAppExceptionHandler.SendAsyncToHockey;
+begin
+  TThread.CreateAnonymousThread(
+    procedure
+    var
+      hockey: THockeyAppSDK;
+      crash: THockeyAppCrash;
+    begin
+      hockey := THockeyAppSDK.Create;
+      hockey.ApiToken := FApiToken;
+      for crash in FCrashLogs do
+      begin
+        hockey.UploadCrash(FAppId, crash);
+        TFile.Delete(crash.LogFile);
+      end;
+    end).Start;
 end;
 
 end.

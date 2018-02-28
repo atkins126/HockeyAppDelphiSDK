@@ -43,6 +43,7 @@ var
 
 implementation
 
+
 {$R *.dfm}
 
 procedure THockeyAppDlg.Button1Click(Sender: TObject);
@@ -59,7 +60,7 @@ begin
     cbApps.Clear;
     for app in liste do
     begin
-      cbApps.Items.AddObject(app.Title, app);
+      cbApps.Items.AddObject(app.Title + ' - ' + app.Platform, app);
     end;
   end;
 end;
