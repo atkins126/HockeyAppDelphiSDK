@@ -131,21 +131,26 @@ type
 
   THockeyAppExceptionHandler = class(TObject)
   private
+    class var
+    fCurrent: THockeyAppExceptionHandler;
     FApiToken: String;
     FAppId: String;
-    FPackageId: String;
+    FBundleIdentifier: String;
     FVersion: String;
-
+  private
+    var
     FCrashLogs: TObjectList<THockeyAppCrash>;
     procedure LoadCrashLogs;
     procedure SendAsyncToHockey;
 
     procedure HandleExceptionMessage(const Sender: TObject; const M: TMessage);
   public
-    constructor Create(ApiToken: String; AppId: String; PackageId: String; Version: String);
+    constructor Create;
     destructor Destroy;override;
 
-
+    procedure Init(ApiToken: String; AppId: String; BundleIdentifier: String; Version: String);
+  public
+    class function Current: THockeyAppExceptionHandler;
   end;
 
 implementation
@@ -515,15 +520,11 @@ end;
 
 { THockeyAppExceptionHandler }
 
-constructor THockeyAppExceptionHandler.Create(ApiToken: String; AppId, PackageId: String; Version: String);
+constructor THockeyAppExceptionHandler.Create;
 begin
   Application.OnException := TgoExceptionReporter.ExceptionHandler;
   TMessageManager.DefaultManager.SubscribeToMessage(TgoExceptionReportMessage, HandleExceptionMessage);
 
-  FApiToken := ApiToken;
-  FAppId := AppId;
-  FPackageId := PackageId;
-  FVersion := Version;
   FCrashLogs := TObjectList<THockeyAppCrash>.Create;
   LoadCrashLogs;
 
@@ -531,6 +532,12 @@ begin
   begin
     SendAsyncToHockey;
   end;
+end;
+
+class function THockeyAppExceptionHandler.Current: THockeyAppExceptionHandler;
+begin
+  if fCurrent = nil then fCurrent := THockeyAppExceptionHandler.Create;
+  Result := fCurrent;
 end;
 
 destructor THockeyAppExceptionHandler.Destroy;
@@ -548,12 +555,21 @@ begin
   if M is TgoExceptionReportMessage then
   begin
     filename := TPath.Combine(TPath.GetDocumentsPath, Format('Exception%s.log', [FormatDateTime('yyyymmddhhnnss', Now)]));
-    hockeyText := 'Package: '+ FPackageId +#13#10+
+    hockeyText := 'Package: '+ FBundleIdentifier +#13#10+
                   'Version: ' + FVersion +#13#10+
                   'Date: '+DateTimeToStr(Now)+#13#10+
                   #13#10;
     TFile.WriteAllText(filename, hockeyText + TgoExceptionReportMessage(M).Report.Report);
   end;
+end;
+
+procedure THockeyAppExceptionHandler.Init(ApiToken, AppId, BundleIdentifier,
+  Version: String);
+begin
+  FApiToken := ApiToken;
+  FAppId := AppId;
+  FBundleIdentifier := BundleIdentifier;
+  FVersion := Version;
 end;
 
 procedure THockeyAppExceptionHandler.LoadCrashLogs;
