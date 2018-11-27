@@ -156,8 +156,8 @@ type
 implementation
 
 uses
-  Forms, System.SysUtils, System.Classes, System.IOUtils,
-  System.Types, Grijjy.ErrorReporting;
+  System.SysUtils, System.Classes, System.IOUtils,
+  System.Types, Grijjy.ErrorReporting, FMX.Forms;
 
 
 const C_ServiceURL = 'https://rink.hockeyapp.net/api/2/';

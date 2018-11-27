@@ -16,6 +16,19 @@ var
   configFileName: String;
   hockeyCliInstance: THockeyCli;
   msbuildInstance: TMSBuild;
+
+procedure UploadPackage(packageName: String);
+begin
+  hockeyCliInstance := THockeyCli.Create(configFileName);
+  try
+    Writeln('Upload Package to HockeyApp');
+    hockeyCliInstance.PackageFileName := packageName;
+    if hockeyCliInstance.NeedUpload then hockeyCliInstance.DoHockeyAppUpload;
+  finally
+    hockeyCliInstance.Free;
+  end;
+end;
+
 begin
   try
     { TODO -oUser -cConsole Main : Code hier einfügen }
@@ -25,16 +38,16 @@ begin
       begin
         Writeln('Compile and Create Package');
         msbuildInstance := TMSBuild.Create(configFileName);
-        hockeyCliInstance := THockeyCli.Create(configFileName);
         try
-          if msbuildInstance.DoMSBUILD and hockeyCliInstance.NeedUpload then
+          if (not msbuildInstance.CanRunMSBuild) then
           begin
-            Writeln('Upload Package to HockeyApp');
-            hockeyCliInstance.DoHockeyAppUpload(msbuildInstance.PackageFileName);
+            UploadPackage('');
+          end else if msbuildInstance.DoMSBUILD then
+          begin
+            UploadPackage(msbuildInstance.PackageFileName);
           end;
         finally
           msbuildInstance.Free;
-          hockeyCliInstance.Free;
         end;
       end;
       Writeln('Done...');

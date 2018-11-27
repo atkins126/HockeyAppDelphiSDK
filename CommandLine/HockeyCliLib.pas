@@ -11,17 +11,20 @@ type
     FAPIToken: String;
     FPublicIdentifier: String;
     FTeams: String;
+    FPackageFileName: String;
+    procedure SetPackageFileName(const Value: String);
   public
     constructor Create;overload;
     constructor Create(json: TJSONObject);overload;
     constructor Create(configFile: String);overload;
 
-    procedure DoHockeyAppUpload(packageFileName: String);
+    procedure DoHockeyAppUpload;
 
     function NeedUpload: Boolean;
 
     property APIToken: String read FAPIToken write FAPIToken;
     property PublicIdentifier: String read FPublicIdentifier write FPublicIdentifier;
+    property PackageFileName: String read FPackageFileName write SetPackageFileName;
   end;
 
 implementation
@@ -43,6 +46,7 @@ begin
   if json.Values['APIToken'] <> nil then FAPIToken := json.Values['APIToken'].Value;
   if json.Values['PublicIdentifier'] <> nil then FPublicIdentifier := json.Values['PublicIdentifier'].Value;
   if json.Values['Teams'] <> nil then FTeams := json.Values['Teams'].Value;
+  if json.Values['PackageFileName'] <> nil then FPackageFileName := json.Values['PackageFileName'].Value;
 end;
 
 constructor THockeyCli.Create(configFile: String);
@@ -56,7 +60,7 @@ begin
   obj.Free;
 end;
 
-procedure THockeyCli.DoHockeyAppUpload(packageFileName: String);
+procedure THockeyCli.DoHockeyAppUpload;
 var
   hockeySDK: THockeyAppSDK;
   versionInfo: THockeyUpdateVersionInfo;
@@ -80,6 +84,14 @@ end;
 function THockeyCli.NeedUpload: Boolean;
 begin
   Result := not APIToken.IsEmpty and not PublicIdentifier.IsEmpty;
+end;
+
+procedure THockeyCli.SetPackageFileName(const Value: String);
+begin
+  if value <> '' then
+  begin
+    FPackageFileName := Value;
+  end;
 end;
 
 end.

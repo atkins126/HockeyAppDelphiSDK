@@ -33,6 +33,7 @@ type
     FBuildType: TBuildType;
     FProjectFileName: String;
     FProjectPath: String;
+    FCanRunMSBuild: Boolean;
     function getMSBuildString: String;
 
     function RunFile(filename: String): Boolean;
@@ -44,6 +45,7 @@ type
 
     function DoMSBUILD: Boolean;
 
+    property CanRunMSBuild: Boolean read FCanRunMSBuild;
     property DelphiPath: String read FDelphiPath write FDelphiPath;
     property Configuration: TConfiguration read FConfiguration write FConfiguration;
     property Platform: TPlatform read FPlatform write FPlatform;
@@ -63,6 +65,7 @@ uses
 
 constructor TMSBuild.Create;
 begin
+  FCanRunMSBuild := false;
   FDelphiPath := '';
   FConfiguration := TConfiguration.cRelease;
   FPlatform := TPlatform.pAndroid;
@@ -78,6 +81,7 @@ begin
   if json.Values['BuildType'] <> nil then FBuildType := TBuildType.FromString(json.Values['BuildType'].Value);
   if json.Values['ProjectPath'] <> nil then ProjectPath := json.Values['ProjectPath'].Value;
   if json.Values['ProjectFileName'] <> nil then FProjectFileName := json.Values['ProjectFileName'].Value;
+  FCanRunMSBuild := true;
 end;
 
 constructor TMSBuild.Create(configFile: String);
@@ -85,6 +89,7 @@ var
   fileContents: String;
   obj: TJSONObject;
 begin
+  FCanRunMSBuild := false;
   fileContents := TFile.ReadAllText(configFile);
   obj := TJSONObject.ParseJSONValue(fileContents) as TJSONObject;
   if (obj <> nil) and (obj.Values['MSBUILD'] <> nil) then Create(obj.Values['MSBUILD'] as TJSONObject);
